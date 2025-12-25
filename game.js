@@ -125,7 +125,7 @@ function draw() {
     }
 
     // Рисуем линию при драге
-    if (isDragging && dragStart && dragCurrent) {
+    /*if (isDragging && dragStart && dragCurrent) {
         const startX = dragStart.x * cell + cell / 2;
         const startY = dragStart.y * cell + cell / 2;
         const endX = dragCurrent.x * cell + cell / 2;
@@ -151,7 +151,7 @@ function draw() {
         ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
         ctx.fill();
         ctx.restore();
-    }
+    }*/
 }
 
 function findMatches() {
