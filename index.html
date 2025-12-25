@@ -1,26 +1,42 @@
 <!DOCTYPE html>
 <html lang="ru">
-<head>
-<meta charset="UTF-8" />
-<title>3 в ряд — с анимацией</title>
-<style>
-body {
-background: #111;
-display: flex;
-justify-content: center;
-align-items: center;
-height: 100vh;
-margin: 0;
-}
-canvas {
-background: #222;
-border-radius: 12px;
-}
-</style>
-</head>
-<body>
-<canvas id="game" width="360" height="360"></canvas>
 
-<script src="game.js"></script>
+<head>
+    <meta charset="UTF-8" />
+    <title>3 в ряд — с анимацией</title>
+    <style>
+        body {
+            background: #111;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            touch-action: none;
+            user-select: none;
+        }
+
+        canvas {
+            background: #222;
+            border-radius: 12px;
+            touch-action: none;
+        }
+        
+        #score {
+            position: absolute;
+            top: 20px;
+            color: white;
+            font: bold 20px Arial;
+            z-index: 10;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="score">Score: 0</div>
+    <canvas id="game" width="360" height="360"></canvas>
+
+    <script src="game.js"></script>
 </body>
+
 </html>

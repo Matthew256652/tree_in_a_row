@@ -1,11 +1,5 @@
 const canvas = document.getElementById('game');
-const scoreDiv = document.createElement('div');
-scoreDiv.style.position = 'absolute';
-scoreDiv.style.top = '20px';
-scoreDiv.style.color = 'white';
-scoreDiv.style.font = 'bold 20px Arial';
-scoreDiv.textContent = 'Score: 0';
-document.body.appendChild(scoreDiv);
+const scoreDiv = document.getElementById('score');
 
 let score = 0;
 const ctx = canvas.getContext('2d');
@@ -20,6 +14,12 @@ let scale = [];
 let removing = false;
 let selected = null;
 let busy = false;
+
+// Добавляем переменные для drag-n-drop
+let isDragging = false;
+let dragStart = null;
+let dragCurrent = null;
+const SWIPE_THRESHOLD = 20; // Минимальное расстояние для свапа
 
 function randColor() {
     return colors[Math.floor(Math.random() * colors.length)];
@@ -106,17 +106,53 @@ function draw() {
             ctx.fillStyle = c;
             ctx.fill();
 
+            // Подсветка выбранного элемента
             if (selected && selected.x === x && selected.y === y) {
                 ctx.lineWidth = 3;
                 ctx.strokeStyle = 'white';
                 ctx.stroke();
             }
 
+            // Подсветка при драге
+            if (isDragging && dragStart && dragStart.x === x && dragStart.y === y) {
+                ctx.lineWidth = 3;
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
+                ctx.stroke();
+            }
+
             ctx.restore();
         }
     }
-}
 
+    // Рисуем линию при драге
+    if (isDragging && dragStart && dragCurrent) {
+        const startX = dragStart.x * cell + cell / 2;
+        const startY = dragStart.y * cell + cell / 2;
+        const endX = dragCurrent.x * cell + cell / 2;
+        const endY = dragCurrent.y * cell + cell / 2;
+        
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        ctx.lineTo(endX, endY);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+        
+        // Стрелочка
+        const angle = Math.atan2(endY - startY, endX - startX);
+        ctx.save();
+        ctx.translate(endX, endY);
+        ctx.rotate(angle);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(-10, -5);
+        ctx.lineTo(-10, 5);
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.fill();
+        ctx.restore();
+    }
+}
 
 function findMatches() {
     const m = [];
@@ -158,17 +194,15 @@ function removeMatches(matches) {
             matches.forEach(p => {
                 board[p.y][p.x] = null;
                 scale[p.y][p.x] = 1;
-                score+=10;
+                score += 10;
             });
-            scoreDiv.textContent='Score: '+score;
+            scoreDiv.textContent = 'Score: ' + score;
 
             removing = false;
-            drop();            // ⬅️ drop ТОЛЬКО ПОСЛЕ удаления
+            drop();
         }
     }, 16);
 }
-
-
 
 function updateAnim() {
     let moving = false;
@@ -183,7 +217,6 @@ function updateAnim() {
         }
     }
 
-    // если идёт shrink-анимация — НИЧЕГО не делаем
     if (removing) return;
 
     if (!moving && busy) {
@@ -202,29 +235,175 @@ function updateAnim() {
     }
 }
 
-function swap(a, b) { const t = board[a.y][a.x]; board[a.y][a.x] = board[b.y][b.x]; board[b.y][b.x] = t; }
+function swap(a, b) {
+    const t = board[a.y][a.x];
+    board[a.y][a.x] = board[b.y][b.x];
+    board[b.y][b.x] = t;
+}
 
-canvas.onclick = e => {
+function getCellFromEvent(e) {
+    const rect = canvas.getBoundingClientRect();
+    let clientX, clientY;
+    
+    if (e.type.includes('touch')) {
+        clientX = e.touches[0].clientX;
+        clientY = e.touches[0].clientY;
+    } else {
+        clientX = e.clientX;
+        clientY = e.clientY;
+    }
+    
+    const x = Math.floor((clientX - rect.left) / cell);
+    const y = Math.floor((clientY - rect.top) / cell);
+    
+    // Проверка выхода за границы
+    if (x < 0 || x >= size || y < 0 || y >= size) {
+        return null;
+    }
+    
+    return { x, y };
+}
+
+function trySwap(start, end) {
+    const dx = Math.abs(start.x - end.x);
+    const dy = Math.abs(start.y - end.y);
+    
+    if (dx + dy === 1) {
+        swap(start, end);
+        const m = findMatches();
+        if (m.length) {
+            removeMatches(m);
+            return true;
+        } else {
+            swap(start, end); // Отмена если нет матча
+            return false;
+        }
+    }
+    return false;
+}
+
+// Обработчики для мыши
+canvas.addEventListener('mousedown', (e) => {
     if (busy) return;
-    const r = canvas.getBoundingClientRect();
-    const x = Math.floor((e.clientX - r.left) / cell);
-    const y = Math.floor((e.clientY - r.top) / cell);
-    if (!selected) selected = { x, y };
-    else {
-        const dx = Math.abs(selected.x - x), dy = Math.abs(selected.y - y);
+    
+    const cellPos = getCellFromEvent(e);
+    if (!cellPos) return;
+    
+    isDragging = true;
+    dragStart = cellPos;
+    dragCurrent = { ...cellPos };
+    selected = null;
+});
+
+canvas.addEventListener('mousemove', (e) => {
+    if (!isDragging || busy) return;
+    
+    const cellPos = getCellFromEvent(e);
+    if (cellPos) {
+        dragCurrent = cellPos;
+    }
+});
+
+canvas.addEventListener('mouseup', () => {
+    if (!isDragging || busy) return;
+    
+    if (dragStart && dragCurrent) {
+        const dx = Math.abs(dragStart.x - dragCurrent.x);
+        const dy = Math.abs(dragStart.y - dragCurrent.y);
+        
+        // Проверяем, достаточно ли протянули для свапа
         if (dx + dy === 1) {
-            swap(selected, { x, y });
-            const m = findMatches();
-            if (m.length) {
-                removeMatches(m);
+            trySwap(dragStart, dragCurrent);
+        }
+    }
+    
+    isDragging = false;
+    dragStart = null;
+    dragCurrent = null;
+});
+
+canvas.addEventListener('mouseleave', () => {
+    isDragging = false;
+    dragStart = null;
+    dragCurrent = null;
+});
+
+// Обработчики для тач-устройств
+canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    if (busy) return;
+    
+    const cellPos = getCellFromEvent(e);
+    if (!cellPos) return;
+    
+    isDragging = true;
+    dragStart = cellPos;
+    dragCurrent = { ...cellPos };
+    selected = null;
+});
+
+canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (!isDragging || busy) return;
+    
+    const cellPos = getCellFromEvent(e);
+    if (cellPos) {
+        dragCurrent = cellPos;
+    }
+});
+
+canvas.addEventListener('touchend', (e) => {
+    e.preventDefault();
+    if (!isDragging || busy) return;
+    
+    if (dragStart && dragCurrent) {
+        const dx = Math.abs(dragStart.x - dragCurrent.x);
+        const dy = Math.abs(dragStart.y - dragCurrent.y);
+        
+        // Для тача используем порог свапа
+        if (dx + dy === 1) {
+            trySwap(dragStart, dragCurrent);
+        } else if (dx === 0 && dy === 0) {
+            // Простое нажатие (для совместимости)
+            if (!selected) {
+                selected = dragStart;
             } else {
-                swap(selected, { x, y });
+                trySwap(selected, dragStart);
+                selected = null;
             }
+        }
+    }
+    
+    isDragging = false;
+    dragStart = null;
+    dragCurrent = null;
+});
+
+// Сохраняем старый обработчик клика для совместимости
+canvas.addEventListener('click', (e) => {
+    if (isDragging) return; // Если был драг, игнорируем клик
+    
+    if (busy) return;
+    const cellPos = getCellFromEvent(e);
+    if (!cellPos) return;
+    
+    if (!selected) {
+        selected = cellPos;
+    } else {
+        const dx = Math.abs(selected.x - cellPos.x);
+        const dy = Math.abs(selected.y - cellPos.y);
+        if (dx + dy === 1) {
+            trySwap(selected, cellPos);
         }
         selected = null;
     }
-};
+});
 
-function loop() { draw(); updateAnim(); requestAnimationFrame(loop); }
+function loop() {
+    draw();
+    updateAnim();
+    requestAnimationFrame(loop);
+}
 
-init(); loop();
+init();
+loop();
