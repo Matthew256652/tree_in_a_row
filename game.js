@@ -15,11 +15,11 @@ let removing = false;
 let selected = null;
 let busy = false;
 
-// Добавляем переменные для drag-n-drop
-let isDragging = false;
-let dragStart = null;
-let dragCurrent = null;
-const SWIPE_THRESHOLD = 20; // Минимальное расстояние для свапа
+// Переменные для управления
+let touchId = null; // ID текущего касания
+let touchStart = null;
+let touchStartCell = null;
+const SWIPE_THRESHOLD = 20;
 
 function randColor() {
     return colors[Math.floor(Math.random() * colors.length)];
@@ -113,45 +113,9 @@ function draw() {
                 ctx.stroke();
             }
 
-            // Подсветка при драге
-            if (isDragging && dragStart && dragStart.x === x && dragStart.y === y) {
-                ctx.lineWidth = 3;
-                ctx.strokeStyle = 'rgba(255, 255, 255, 0.7)';
-                ctx.stroke();
-            }
-
             ctx.restore();
         }
     }
-
-    // Рисуем линию при драге
-    /*if (isDragging && dragStart && dragCurrent) {
-        const startX = dragStart.x * cell + cell / 2;
-        const startY = dragStart.y * cell + cell / 2;
-        const endX = dragCurrent.x * cell + cell / 2;
-        const endY = dragCurrent.y * cell + cell / 2;
-        
-        ctx.beginPath();
-        ctx.moveTo(startX, startY);
-        ctx.lineTo(endX, endY);
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-        
-        // Стрелочка
-        const angle = Math.atan2(endY - startY, endX - startX);
-        ctx.save();
-        ctx.translate(endX, endY);
-        ctx.rotate(angle);
-        ctx.beginPath();
-        ctx.moveTo(0, 0);
-        ctx.lineTo(-10, -5);
-        ctx.lineTo(-10, 5);
-        ctx.closePath();
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-        ctx.fill();
-        ctx.restore();
-    }*/
 }
 
 function findMatches() {
@@ -241,33 +205,22 @@ function swap(a, b) {
     board[b.y][b.x] = t;
 }
 
-function getCellFromEvent(e) {
+function getCellFromCoordinates(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
-    let clientX, clientY;
-    
-    if (e.type.includes('touch')) {
-        clientX = e.touches[0].clientX;
-        clientY = e.touches[0].clientY;
-    } else {
-        clientX = e.clientX;
-        clientY = e.clientY;
-    }
-    
     const x = Math.floor((clientX - rect.left) / cell);
     const y = Math.floor((clientY - rect.top) / cell);
-    
-    // Проверка выхода за границы
+
     if (x < 0 || x >= size || y < 0 || y >= size) {
         return null;
     }
-    
+
     return { x, y };
 }
 
 function trySwap(start, end) {
     const dx = Math.abs(start.x - end.x);
     const dy = Math.abs(start.y - end.y);
-    
+
     if (dx + dy === 1) {
         swap(start, end);
         const m = findMatches();
@@ -282,122 +235,184 @@ function trySwap(start, end) {
     return false;
 }
 
-// Обработчики для мыши
+// ========== ОБРАБОТЧИКИ МЫШИ ==========
+let mouseDown = false;
+let mouseStart = null;
+let mouseStartCell = null;
+
 canvas.addEventListener('mousedown', (e) => {
     if (busy) return;
-    
-    const cellPos = getCellFromEvent(e);
+
+    const rect = canvas.getBoundingClientRect();
+    const cellPos = getCellFromCoordinates(e.clientX, e.clientY);
     if (!cellPos) return;
-    
-    isDragging = true;
-    dragStart = cellPos;
-    dragCurrent = { ...cellPos };
+
+    mouseDown = true;
+    mouseStart = { x: e.clientX, y: e.clientY };
+    mouseStartCell = cellPos;
     selected = null;
 });
 
 canvas.addEventListener('mousemove', (e) => {
-    if (!isDragging || busy) return;
-    
-    const cellPos = getCellFromEvent(e);
-    if (cellPos) {
-        dragCurrent = cellPos;
-    }
+    if (!mouseDown || busy) return;
+
+    // Просто обновляем позицию, обработка будет в mouseup
 });
 
-canvas.addEventListener('mouseup', () => {
-    if (!isDragging || busy) return;
-    
-    if (dragStart && dragCurrent) {
-        const dx = Math.abs(dragStart.x - dragCurrent.x);
-        const dy = Math.abs(dragStart.y - dragCurrent.y);
-        
-        // Проверяем, достаточно ли протянули для свапа
-        if (dx + dy === 1) {
-            trySwap(dragStart, dragCurrent);
+canvas.addEventListener('mouseup', (e) => {
+    if (!mouseDown || busy || !mouseStart || !mouseStartCell) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const dx = e.clientX - mouseStart.x;
+    const dy = e.clientY - mouseStart.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance >= SWIPE_THRESHOLD) {
+        // Это свап - определяем направление
+        let neighbor = { ...mouseStartCell };
+
+        if (Math.abs(dx) > Math.abs(dy)) {
+            // Горизонтальный свап
+            if (dx > 0 && mouseStartCell.x < size - 1) {
+                neighbor.x += 1;
+            } else if (dx < 0 && mouseStartCell.x > 0) {
+                neighbor.x -= 1;
+            }
+        } else {
+            // Вертикальный свап
+            if (dy > 0 && mouseStartCell.y < size - 1) {
+                neighbor.y += 1;
+            } else if (dy < 0 && mouseStartCell.y > 0) {
+                neighbor.y -= 1;
+            }
+        }
+
+        // Пытаемся свапнуть с соседом
+        if (neighbor.x !== mouseStartCell.x || neighbor.y !== mouseStartCell.y) {
+            trySwap(mouseStartCell, neighbor);
+        }
+    } else {
+        // Это клик
+        const endCell = getCellFromCoordinates(e.clientX, e.clientY);
+        if (!endCell) return;
+
+        if (!selected) {
+            selected = mouseStartCell;
+        } else {
+            // Уже есть выбранный круг - пытаемся свапнуть
+            trySwap(selected, mouseStartCell);
+            selected = null;
         }
     }
-    
-    isDragging = false;
-    dragStart = null;
-    dragCurrent = null;
+
+    mouseDown = false;
+    mouseStart = null;
+    mouseStartCell = null;
 });
 
 canvas.addEventListener('mouseleave', () => {
-    isDragging = false;
-    dragStart = null;
-    dragCurrent = null;
+    mouseDown = false;
+    mouseStart = null;
+    mouseStartCell = null;
 });
 
-// Обработчики для тач-устройств
+// ========== ОБРАБОТЧИКИ ТАЧА ==========
 canvas.addEventListener('touchstart', (e) => {
     e.preventDefault();
-    if (busy) return;
-    
-    const cellPos = getCellFromEvent(e);
-    if (!cellPos) return;
-    
-    isDragging = true;
-    dragStart = cellPos;
-    dragCurrent = { ...cellPos };
+    if (busy || touchId !== null) return;
+
+    const touch = e.touches[0];
+    touchId = touch.identifier;
+
+    const rect = canvas.getBoundingClientRect();
+    const cellPos = getCellFromCoordinates(touch.clientX, touch.clientY);
+    if (!cellPos) {
+        touchId = null;
+        return;
+    }
+
+    touchStart = { x: touch.clientX, y: touch.clientY };
+    touchStartCell = cellPos;
     selected = null;
 });
 
 canvas.addEventListener('touchmove', (e) => {
     e.preventDefault();
-    if (!isDragging || busy) return;
-    
-    const cellPos = getCellFromEvent(e);
-    if (cellPos) {
-        dragCurrent = cellPos;
-    }
+    if (touchId === null || busy) return;
+
+    // Находим наш тач по ID
+    const touch = Array.from(e.touches).find(t => t.identifier === touchId);
+    if (!touch) return;
+
+    // Просто предотвращаем скролл, обработка будет в touchend
 });
 
 canvas.addEventListener('touchend', (e) => {
     e.preventDefault();
-    if (!isDragging || busy) return;
-    
-    if (dragStart && dragCurrent) {
-        const dx = Math.abs(dragStart.x - dragCurrent.x);
-        const dy = Math.abs(dragStart.y - dragCurrent.y);
-        
-        // Для тача используем порог свапа
-        if (dx + dy === 1) {
-            trySwap(dragStart, dragCurrent);
-        } else if (dx === 0 && dy === 0) {
-            // Простое нажатие (для совместимости)
-            if (!selected) {
-                selected = dragStart;
-            } else {
-                trySwap(selected, dragStart);
-                selected = null;
+    if (touchId === null || busy || !touchStart || !touchStartCell) return;
+
+    // Находим завершившийся тач
+    const touch = Array.from(e.changedTouches).find(t => t.identifier === touchId);
+    if (!touch) {
+        touchId = null;
+        touchStart = null;
+        touchStartCell = null;
+        return;
+    }
+
+    const dx = touch.clientX - touchStart.x;
+    const dy = touch.clientY - touchStart.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance >= SWIPE_THRESHOLD) {
+        // Это свап - определяем направление
+        let neighbor = { ...touchStartCell };
+
+        if (Math.abs(dx) > Math.abs(dy)) {
+            // Горизонтальный свап
+            if (dx > 0 && touchStartCell.x < size - 1) {
+                neighbor.x += 1;
+            } else if (dx < 0 && touchStartCell.x > 0) {
+                neighbor.x -= 1;
+            }
+        } else {
+            // Вертикальный свап
+            if (dy > 0 && touchStartCell.y < size - 1) {
+                neighbor.y += 1;
+            } else if (dy < 0 && touchStartCell.y > 0) {
+                neighbor.y -= 1;
             }
         }
+
+        // Пытаемся свапнуть с соседом
+        if (neighbor.x !== touchStartCell.x || neighbor.y !== touchStartCell.y) {
+            trySwap(touchStartCell, neighbor);
+        }
+    } else {
+        // Это короткое касание (клик)
+        if (!selected) {
+            selected = touchStartCell;
+        } else {
+            // Уже есть выбранный круг - пытаемся свапнуть
+            trySwap(selected, touchStartCell);
+            selected = null;
+        }
     }
-    
-    isDragging = false;
-    dragStart = null;
-    dragCurrent = null;
+
+    touchId = null;
+    touchStart = null;
+    touchStartCell = null;
 });
 
-// Сохраняем старый обработчик клика для совместимости
-canvas.addEventListener('click', (e) => {
-    if (isDragging) return; // Если был драг, игнорируем клик
-    
-    if (busy) return;
-    const cellPos = getCellFromEvent(e);
-    if (!cellPos) return;
-    
-    if (!selected) {
-        selected = cellPos;
-    } else {
-        const dx = Math.abs(selected.x - cellPos.x);
-        const dy = Math.abs(selected.y - cellPos.y);
-        if (dx + dy === 1) {
-            trySwap(selected, cellPos);
-        }
-        selected = null;
-    }
+canvas.addEventListener('touchcancel', (e) => {
+    e.preventDefault();
+    touchId = null;
+    touchStart = null;
+    touchStartCell = null;
 });
+
+// Удаляем старый обработчик click, так как теперь клики обрабатываются через mouseup
+// canvas.addEventListener('click', ...) - больше не нужно
 
 function loop() {
     draw();
