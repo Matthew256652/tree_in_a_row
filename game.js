@@ -14,9 +14,11 @@ let scale = [];
 let removing = false;
 let selected = null;
 let busy = false;
+let swapping = false;
+let swapAnimation = null;
 
 // Переменные для управления
-let touchId = null; // ID текущего касания
+let touchId = null;
 let touchStart = null;
 let touchStartCell = null;
 const SWIPE_THRESHOLD = 20;
@@ -91,11 +93,51 @@ function draw() {
 
     for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
-            const c = board[y][x];
+            let c = board[y][x];
             if (!c) continue;
 
-            const px = x * cell + cell / 2;
-            const py = animY[y][x] * cell + cell / 2;
+            let px = x * cell + cell / 2;
+            let py = animY[y][x] * cell + cell / 2;
+
+            // Анимация свапа
+            if (swapping && swapAnimation) {
+                const { cell1, cell2, progress, reverse, originalColors } = swapAnimation;
+                
+                // Определяем, какой это круг в анимации
+                if (x === cell1.x && y === cell1.y) {
+                    // Первый круг
+                    const dx = cell2.x - cell1.x;
+                    const dy = cell2.y - cell1.y;
+                    const animProgress = reverse ? (1 - progress) : progress;
+                    px += dx * cell * animProgress;
+                    py += dy * cell * animProgress;
+                    
+                    // Используем правильный цвет из оригинальных цветов
+                    if (reverse) {
+                        // При обратной анимации первый круг должен быть цветом второго круга
+                        c = originalColors[1];
+                    } else {
+                        // При прямой анимации первый круг остаётся своим цветом
+                        c = originalColors[0];
+                    }
+                } else if (x === cell2.x && y === cell2.y) {
+                    // Второй круг
+                    const dx = cell1.x - cell2.x;
+                    const dy = cell1.y - cell2.y;
+                    const animProgress = reverse ? (1 - progress) : progress;
+                    px += dx * cell * animProgress;
+                    py += dy * cell * animProgress;
+                    
+                    // Используем правильный цвет из оригинальных цветов
+                    if (reverse) {
+                        // При обратной анимации второй круг должен быть цветом первого круга
+                        c = originalColors[0];
+                    } else {
+                        // При прямой анимации второй круг остаётся своим цветом
+                        c = originalColors[1];
+                    }
+                }
+            }
 
             ctx.save();
             ctx.translate(px, py);
@@ -171,6 +213,7 @@ function removeMatches(matches) {
 function updateAnim() {
     let moving = false;
 
+    // Анимация падения (скорость 0.25)
     for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
             if (animY[y][x] < y) {
@@ -181,9 +224,32 @@ function updateAnim() {
         }
     }
 
+    // Анимация свапа (скорость 0.125 - в 2 раза медленнее)
+    if (swapping && swapAnimation) {
+        const { reverse, callback } = swapAnimation;
+        
+        if (!reverse) {
+            // Прямая анимация (вперёд)
+            swapAnimation.progress += 0.125;
+            if (swapAnimation.progress >= 1) {
+                swapAnimation.progress = 1;
+                swapping = false;
+                if (callback) callback();
+            }
+        } else {
+            // Обратная анимация (назад)
+            swapAnimation.progress -= 0.125;
+            if (swapAnimation.progress <= 0) {
+                swapAnimation.progress = 0;
+                swapping = false;
+                if (callback) callback();
+            }
+        }
+    }
+
     if (removing) return;
 
-    if (!moving && busy) {
+    if (!moving && busy && !swapping) {
         for (let y = 0; y < size; y++) {
             for (let x = 0; x < size; x++) {
                 animY[y][x] = y;
@@ -199,38 +265,68 @@ function updateAnim() {
     }
 }
 
-function swap(a, b) {
+function swapCells(a, b) {
     const t = board[a.y][a.x];
     board[a.y][a.x] = board[b.y][b.x];
     board[b.y][b.x] = t;
+}
+
+function animateSwap(cell1, cell2, reverse = false, callback = null) {
+    swapping = true;
+    
+    // Сохраняем исходные цвета ДО любых изменений
+    const originalColor1 = board[cell1.y][cell1.x];
+    const originalColor2 = board[cell2.y][cell2.x];
+    
+    swapAnimation = {
+        cell1: { ...cell1 },
+        cell2: { ...cell2 },
+        progress: reverse ? 1 : 0,
+        reverse: reverse,
+        originalColors: [originalColor1, originalColor2], // Сохраняем исходные цвета
+        callback: callback
+    };
 }
 
 function getCellFromCoordinates(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
     const x = Math.floor((clientX - rect.left) / cell);
     const y = Math.floor((clientY - rect.top) / cell);
-
+    
     if (x < 0 || x >= size || y < 0 || y >= size) {
         return null;
     }
-
+    
     return { x, y };
 }
 
 function trySwap(start, end) {
     const dx = Math.abs(start.x - end.x);
     const dy = Math.abs(start.y - end.y);
-
+    
     if (dx + dy === 1) {
-        swap(start, end);
-        const m = findMatches();
-        if (m.length) {
-            removeMatches(m);
-            return true;
-        } else {
-            swap(start, end); // Отмена если нет матча
-            return false;
-        }
+        // Запускаем анимацию свапа ВПЕРЁД
+        animateSwap(start, end, false, () => {
+            // После завершения анимации вперёд, меняем круги местами в данных
+            swapCells(start, end);
+            
+            // Проверяем совпадения
+            const m = findMatches();
+            if (m.length) {
+                // Если есть совпадения - запускаем удаление
+                removeMatches(m);
+            } else {
+                // Если нет совпадений, запускаем обратную анимацию
+                setTimeout(() => {
+                    // Перед обратной анимацией меняем круги обратно в данных
+                    swapCells(start, end);
+                    // Запускаем обратную анимацию
+                    animateSwap(start, end, true);
+                }, 100);
+            }
+        });
+        
+        return true;
     }
     return false;
 }
@@ -241,12 +337,12 @@ let mouseStart = null;
 let mouseStartCell = null;
 
 canvas.addEventListener('mousedown', (e) => {
-    if (busy) return;
-
+    if (busy || swapping) return;
+    
     const rect = canvas.getBoundingClientRect();
     const cellPos = getCellFromCoordinates(e.clientX, e.clientY);
     if (!cellPos) return;
-
+    
     mouseDown = true;
     mouseStart = { x: e.clientX, y: e.clientY };
     mouseStartCell = cellPos;
@@ -254,57 +350,49 @@ canvas.addEventListener('mousedown', (e) => {
 });
 
 canvas.addEventListener('mousemove', (e) => {
-    if (!mouseDown || busy) return;
-
-    // Просто обновляем позицию, обработка будет в mouseup
+    if (!mouseDown || busy || swapping) return;
 });
 
 canvas.addEventListener('mouseup', (e) => {
-    if (!mouseDown || busy || !mouseStart || !mouseStartCell) return;
-
+    if (!mouseDown || busy || swapping || !mouseStart || !mouseStartCell) return;
+    
     const rect = canvas.getBoundingClientRect();
     const dx = e.clientX - mouseStart.x;
     const dy = e.clientY - mouseStart.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
-
+    
     if (distance >= SWIPE_THRESHOLD) {
-        // Это свап - определяем направление
-        let neighbor = { ...mouseStartCell };
-
+        let neighbor = {...mouseStartCell};
+        
         if (Math.abs(dx) > Math.abs(dy)) {
-            // Горизонтальный свап
             if (dx > 0 && mouseStartCell.x < size - 1) {
                 neighbor.x += 1;
             } else if (dx < 0 && mouseStartCell.x > 0) {
                 neighbor.x -= 1;
             }
         } else {
-            // Вертикальный свап
             if (dy > 0 && mouseStartCell.y < size - 1) {
                 neighbor.y += 1;
             } else if (dy < 0 && mouseStartCell.y > 0) {
                 neighbor.y -= 1;
             }
         }
-
-        // Пытаемся свапнуть с соседом
+        
         if (neighbor.x !== mouseStartCell.x || neighbor.y !== mouseStartCell.y) {
             trySwap(mouseStartCell, neighbor);
         }
     } else {
-        // Это клик
         const endCell = getCellFromCoordinates(e.clientX, e.clientY);
         if (!endCell) return;
-
+        
         if (!selected) {
             selected = mouseStartCell;
         } else {
-            // Уже есть выбранный круг - пытаемся свапнуть
             trySwap(selected, mouseStartCell);
             selected = null;
         }
     }
-
+    
     mouseDown = false;
     mouseStart = null;
     mouseStartCell = null;
@@ -319,18 +407,18 @@ canvas.addEventListener('mouseleave', () => {
 // ========== ОБРАБОТЧИКИ ТАЧА ==========
 canvas.addEventListener('touchstart', (e) => {
     e.preventDefault();
-    if (busy || touchId !== null) return;
-
+    if (busy || swapping || touchId !== null) return;
+    
     const touch = e.touches[0];
     touchId = touch.identifier;
-
+    
     const rect = canvas.getBoundingClientRect();
     const cellPos = getCellFromCoordinates(touch.clientX, touch.clientY);
     if (!cellPos) {
         touchId = null;
         return;
     }
-
+    
     touchStart = { x: touch.clientX, y: touch.clientY };
     touchStartCell = cellPos;
     selected = null;
@@ -338,20 +426,16 @@ canvas.addEventListener('touchstart', (e) => {
 
 canvas.addEventListener('touchmove', (e) => {
     e.preventDefault();
-    if (touchId === null || busy) return;
-
-    // Находим наш тач по ID
+    if (touchId === null || busy || swapping) return;
+    
     const touch = Array.from(e.touches).find(t => t.identifier === touchId);
     if (!touch) return;
-
-    // Просто предотвращаем скролл, обработка будет в touchend
 });
 
 canvas.addEventListener('touchend', (e) => {
     e.preventDefault();
-    if (touchId === null || busy || !touchStart || !touchStartCell) return;
-
-    // Находим завершившийся тач
+    if (touchId === null || busy || swapping || !touchStart || !touchStartCell) return;
+    
     const touch = Array.from(e.changedTouches).find(t => t.identifier === touchId);
     if (!touch) {
         touchId = null;
@@ -359,46 +443,40 @@ canvas.addEventListener('touchend', (e) => {
         touchStartCell = null;
         return;
     }
-
+    
     const dx = touch.clientX - touchStart.x;
     const dy = touch.clientY - touchStart.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
-
+    
     if (distance >= SWIPE_THRESHOLD) {
-        // Это свап - определяем направление
-        let neighbor = { ...touchStartCell };
-
+        let neighbor = {...touchStartCell};
+        
         if (Math.abs(dx) > Math.abs(dy)) {
-            // Горизонтальный свап
             if (dx > 0 && touchStartCell.x < size - 1) {
                 neighbor.x += 1;
             } else if (dx < 0 && touchStartCell.x > 0) {
                 neighbor.x -= 1;
             }
         } else {
-            // Вертикальный свап
             if (dy > 0 && touchStartCell.y < size - 1) {
                 neighbor.y += 1;
             } else if (dy < 0 && touchStartCell.y > 0) {
                 neighbor.y -= 1;
             }
         }
-
-        // Пытаемся свапнуть с соседом
+        
         if (neighbor.x !== touchStartCell.x || neighbor.y !== touchStartCell.y) {
             trySwap(touchStartCell, neighbor);
         }
     } else {
-        // Это короткое касание (клик)
         if (!selected) {
             selected = touchStartCell;
         } else {
-            // Уже есть выбранный круг - пытаемся свапнуть
             trySwap(selected, touchStartCell);
             selected = null;
         }
     }
-
+    
     touchId = null;
     touchStart = null;
     touchStartCell = null;
@@ -410,9 +488,6 @@ canvas.addEventListener('touchcancel', (e) => {
     touchStart = null;
     touchStartCell = null;
 });
-
-// Удаляем старый обработчик click, так как теперь клики обрабатываются через mouseup
-// canvas.addEventListener('click', ...) - больше не нужно
 
 function loop() {
     draw();
