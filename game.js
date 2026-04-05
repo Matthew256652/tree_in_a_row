@@ -159,7 +159,7 @@ function drawBoardGrid() {
             ctx.quadraticCurveTo(left, top, left + radius, top);
             ctx.closePath();
 
-            ctx.fillStyle = '#eff0ff';
+            ctx.fillStyle = '#d6d3ed';
             ctx.fill();
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
             ctx.lineWidth = 1;
