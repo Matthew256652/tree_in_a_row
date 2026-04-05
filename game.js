@@ -1,6 +1,7 @@
 const canvas = document.getElementById('game');
 const scoreDiv = document.getElementById('score');
 const timerDiv = document.getElementById('timer');
+const hud = document.getElementById('hud');
 const startScreen = document.getElementById('start-screen');
 const gameOverScreen = document.getElementById('game-over-screen');
 const finalScoreDiv = document.getElementById('final-score');
@@ -86,11 +87,13 @@ function clearTimer() {
 }
 
 function showStartScreen() {
+    hud.classList.add('hidden');
     startScreen.classList.remove('hidden');
 }
 
 function hideStartScreen() {
     startScreen.classList.add('hidden');
+    hud.classList.remove('hidden');
 }
 
 function showGameOverScreen() {
@@ -511,6 +514,7 @@ let mouseStart = null;
 let mouseStartCell = null;
 
 canvas.addEventListener('mousedown', (e) => {
+    if (gameState !== 'playing') return;
     if (busy || swapping) return;
     
     const rect = canvas.getBoundingClientRect();
@@ -528,6 +532,7 @@ canvas.addEventListener('mousemove', (e) => {
 });
 
 canvas.addEventListener('mouseup', (e) => {
+    if (gameState !== 'playing') return;
     if (!mouseDown || busy || swapping || !mouseStart || !mouseStartCell) return;
     
     const rect = canvas.getBoundingClientRect();
@@ -580,6 +585,7 @@ canvas.addEventListener('mouseleave', () => {
 
 // ========== ОБРАБОТЧИКИ ТАЧА ==========
 canvas.addEventListener('touchstart', (e) => {
+    if (gameState !== 'playing') return;
     e.preventDefault();
     if (busy || swapping || touchId !== null) return;
     
@@ -607,6 +613,7 @@ canvas.addEventListener('touchmove', (e) => {
 });
 
 canvas.addEventListener('touchend', (e) => {
+    if (gameState !== 'playing') return;
     e.preventDefault();
     if (touchId === null || busy || swapping || !touchStart || !touchStartCell) return;
     
@@ -669,5 +676,28 @@ function loop() {
     requestAnimationFrame(loop);
 }
 
+function handleStartOverlayAction(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (gameState === 'start') {
+        startGame();
+    }
+}
+
+startScreen.addEventListener('click', handleStartOverlayAction);
+startScreen.addEventListener('touchstart', handleStartOverlayAction, { passive: false });
+
+restartBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    startGame();
+});
+
+leaderboardBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    // Пока оставляем кнопку без действия.
+});
+
 init();
+showStartScreen();
+updateTimerText();
 loop();
