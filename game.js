@@ -6,7 +6,23 @@ const ctx = canvas.getContext('2d');
 
 const size = 8;
 const cell = 45;
-const colors = ['red', 'blue', 'yellow', 'green'];
+const tileTypes = ['gem1', 'gem2', 'gem3', 'gem4', 'gem5'];
+const fallbackColors = {
+    gem1: '#f44336',
+    gem2: '#2196f3',
+    gem3: '#ffeb3b',
+    gem4: '#4caf50',
+    gem5: '#9c27b0'
+};
+const tileImages = {};
+const backgroundImage = new Image();
+backgroundImage.src = 'assets/background.jpg';
+
+tileTypes.forEach((type) => {
+    const img = new Image();
+    img.src = `assets/gems/${type}.png`;
+    tileImages[type] = img;
+});
 
 let board = [];
 let animY = [];
@@ -24,7 +40,7 @@ let touchStartCell = null;
 const SWIPE_THRESHOLD = 20;
 
 function randColor() {
-    return colors[Math.floor(Math.random() * colors.length)];
+    return tileTypes[Math.floor(Math.random() * tileTypes.length)];
 }
 
 function hasMatchAt(x, y) {
@@ -88,8 +104,30 @@ function drop() {
     }
 }
 
+function drawTile(tileType) {
+    const sprite = tileImages[tileType];
+
+    if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+        const padding = 4;
+        ctx.drawImage(sprite, -cell / 2 + padding, -cell / 2 + padding, cell - padding * 2, cell - padding * 2);
+        return;
+    }
+
+    // Fallback на случай, если картинка не успела загрузиться.
+    ctx.beginPath();
+    ctx.arc(0, 0, cell / 2 - 5, 0, Math.PI * 2);
+    ctx.fillStyle = fallbackColors[tileType] || '#888';
+    ctx.fill();
+}
+
 function draw() {
-    ctx.clearRect(0, 0, 360, 360);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (backgroundImage.complete && backgroundImage.naturalWidth > 0) {
+        ctx.drawImage(backgroundImage, 0, 0, canvas.width, canvas.height);
+    } else {
+        ctx.fillStyle = '#222';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
 
     for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
@@ -143,10 +181,7 @@ function draw() {
             ctx.translate(px, py);
             ctx.scale(scale[y][x], scale[y][x]);
 
-            ctx.beginPath();
-            ctx.arc(0, 0, cell / 2 - 5, 0, Math.PI * 2);
-            ctx.fillStyle = c;
-            ctx.fill();
+            drawTile(c);
 
             // Подсветка выбранного элемента
             if (selected && selected.x === x && selected.y === y) {
