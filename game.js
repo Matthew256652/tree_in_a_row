@@ -6,6 +6,7 @@ const ctx = canvas.getContext('2d');
 
 const size = 8;
 const cell = 45;
+const boardPadding = 8;
 const tileTypes = ['gem1', 'gem2', 'gem3', 'gem4', 'gem5'];
 const fallbackColors = {
     gem1: '#f44336',
@@ -135,10 +136,43 @@ function drawTile(tileType) {
     ctx.fill();
 }
 
+function drawBoardGrid() {
+    const innerCell = cell - 2;
+    const radius = 6;
+
+    for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+            const left = x * cell + boardPadding / 2;
+            const top = y * cell + boardPadding / 2;
+            const width = innerCell - boardPadding;
+            const height = innerCell - boardPadding;
+
+            ctx.beginPath();
+            ctx.moveTo(left + radius, top);
+            ctx.lineTo(left + width - radius, top);
+            ctx.quadraticCurveTo(left + width, top, left + width, top + radius);
+            ctx.lineTo(left + width, top + height - radius);
+            ctx.quadraticCurveTo(left + width, top + height, left + width - radius, top + height);
+            ctx.lineTo(left + radius, top + height);
+            ctx.quadraticCurveTo(left, top + height, left, top + height - radius);
+            ctx.lineTo(left, top + radius);
+            ctx.quadraticCurveTo(left, top, left + radius, top);
+            ctx.closePath();
+
+            ctx.fillStyle = '#eff0ff';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+    }
+}
+
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = 'rgba(20, 20, 20, 0.18)';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    drawBoardGrid();
 
     for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
@@ -248,7 +282,7 @@ function removeMatches(matches) {
                 scale[p.y][p.x] = 1;
                 score += 10;
             });
-            scoreDiv.textContent = 'Score: ' + score;
+            scoreDiv.textContent = 'Счёт: ' + score;
 
             removing = false;
             drop();
