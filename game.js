@@ -6,7 +6,7 @@ const ctx = canvas.getContext('2d');
 
 const size = 8;
 const cell = 45;
-const boardPadding = 8;
+const boardGap = 1.5;
 const tileTypes = ['gem1', 'gem2', 'gem3', 'gem4', 'gem5'];
 const fallbackColors = {
     gem1: '#f44336',
@@ -124,7 +124,7 @@ function drawTile(tileType) {
     const sprite = tileImages[tileType];
 
     if (sprite && sprite.complete && sprite.naturalWidth > 0) {
-        const padding = 4;
+        const padding = 2;
         ctx.drawImage(sprite, -cell / 2 + padding, -cell / 2 + padding, cell - padding * 2, cell - padding * 2);
         return;
     }
@@ -137,15 +137,15 @@ function drawTile(tileType) {
 }
 
 function drawBoardGrid() {
-    const innerCell = cell - 2;
+    const innerCell = cell - boardGap;
     const radius = 6;
 
     for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
-            const left = x * cell + boardPadding / 2;
-            const top = y * cell + boardPadding / 2;
-            const width = innerCell - boardPadding;
-            const height = innerCell - boardPadding;
+            const left = x * cell + boardGap / 2;
+            const top = y * cell + boardGap / 2;
+            const width = innerCell;
+            const height = innerCell;
 
             ctx.beginPath();
             ctx.moveTo(left + radius, top);
