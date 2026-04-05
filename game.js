@@ -15,13 +15,28 @@ const fallbackColors = {
     gem5: '#9c27b0'
 };
 const tileImages = {};
-const backgroundImage = new Image();
-backgroundImage.src = 'assets/background.jpg';
+
+function loadImageWithFallbacks(candidates) {
+    const img = new Image();
+    let index = 0;
+
+    function tryNext() {
+        if (index >= candidates.length) return;
+        img.src = candidates[index];
+        index += 1;
+    }
+
+    img.onerror = tryNext;
+    tryNext();
+    return img;
+}
 
 tileTypes.forEach((type) => {
-    const img = new Image();
-    img.src = `assets/gems/${type}.png`;
-    tileImages[type] = img;
+    // Поддерживаем обе структуры: assets/gems/gemX.png и assets/gemX.png
+    tileImages[type] = loadImageWithFallbacks([
+        `assets/gems/${type}.png`,
+        `assets/${type}.png`
+    ]);
 });
 
 let board = [];
@@ -122,12 +137,8 @@ function drawTile(tileType) {
 
 function draw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    if (backgroundImage.complete && backgroundImage.naturalWidth > 0) {
-        ctx.drawImage(backgroundImage, 0, 0, canvas.width, canvas.height);
-    } else {
-        ctx.fillStyle = '#222';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
+    ctx.fillStyle = 'rgba(20, 20, 20, 0.18)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
