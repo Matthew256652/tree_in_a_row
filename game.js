@@ -676,16 +676,20 @@ function loop() {
     requestAnimationFrame(loop);
 }
 
-function handleStartOverlayAction(e) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (gameState === 'start') {
-        startGame();
-    }
+function handleStartOverlayAction() {
+    if (gameState !== 'start') return;
+    startGame();
 }
 
+// Telegram WebApp может по-разному отдавать события тапа.
 startScreen.addEventListener('click', handleStartOverlayAction);
-startScreen.addEventListener('touchstart', handleStartOverlayAction, { passive: false });
+startScreen.addEventListener('touchend', handleStartOverlayAction);
+startScreen.addEventListener('pointerdown', handleStartOverlayAction);
+
+// Fallback: если оверлей не получил событие, стартуем по первому тапу.
+window.addEventListener('click', handleStartOverlayAction, true);
+window.addEventListener('touchend', handleStartOverlayAction, true);
+window.addEventListener('pointerdown', handleStartOverlayAction, true);
 
 restartBtn.addEventListener('click', (e) => {
     e.preventDefault();
