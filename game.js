@@ -7,6 +7,10 @@ const gameOverScreen = document.getElementById('game-over-screen');
 const finalScoreDiv = document.getElementById('final-score');
 const restartBtn = document.getElementById('restart-btn');
 const leaderboardBtn = document.getElementById('leaderboard-btn');
+const leaderboardModal = document.getElementById('leaderboard-modal');
+const leaderboardCloseBtn = document.getElementById('leaderboard-close-btn');
+const leaderboardStatus = document.getElementById('leaderboard-status');
+const leaderboardList = document.getElementById('leaderboard-list');
 
 let score = 0;
 const ctx = canvas.getContext('2d');
@@ -16,6 +20,7 @@ const cell = 45;
 const boardGap = 1.5;
 const GAME_DURATION_SECONDS = 180;
 const TIMER_WARNING_SECONDS = 20;
+const LEADERBOARD_API_URL = 'https://script.google.com/macros/s/AKfycbzJFmEX9X6zP9Pv7Z_jBgGukEhzbcXWc7eVnqc4l9JCZKPEwDZGGEi1Ki6Icc0uiq4-YA/exec';
 const tileTypes = ['gem1', 'gem2', 'gem3', 'gem4', 'gem5'];
 const fallbackColors = {
     gem1: '#f44336',
@@ -28,6 +33,8 @@ const tileImages = {};
 let gameState = 'start'; // start | playing | gameover
 let timeLeft = GAME_DURATION_SECONDS;
 let timerIntervalId = null;
+let isSubmittingScore = false;
+let leaderboardLoadingAnimationId = null;
 
 function loadImageWithFallbacks(candidates) {
     const img = new Image();
@@ -86,6 +93,141 @@ function clearTimer() {
     }
 }
 
+function getTgUser() {
+    return window.Telegram?.WebApp?.initDataUnsafe?.user || null;
+}
+
+function getTgId() {
+    const user = getTgUser();
+    return user?.id ? String(user.id) : '';
+}
+
+function getTgUsername() {
+    const user = getTgUser();
+    if (!user) return '';
+    if (user.username) return '@' + user.username;
+    const fn = user.first_name || '';
+    const ln = user.last_name || '';
+    const combo = (fn + ' ' + ln).trim();
+    return combo || 'Игрок';
+}
+
+function formatMoscowDateTime(date = new Date()) {
+    const parts = new Intl.DateTimeFormat('ru-RU', {
+        timeZone: 'Europe/Moscow',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    }).formatToParts(date);
+    const map = {};
+    parts.forEach((p) => {
+        map[p.type] = p.value;
+    });
+    return `${map.day}.${map.month}.${map.year} ${map.hour}:${map.minute}`;
+}
+
+function renderLeaderboardRows(topList) {
+    leaderboardList.innerHTML = '';
+    topList.forEach((item, index) => {
+        const row = document.createElement('div');
+        row.className = 'leaderboard-row';
+        if (index < 3) row.classList.add(`place-${index + 1}`);
+
+        const place = Number(item.place || (index + 1));
+        const username = item.username || 'Игрок';
+        const value = Number(item.score || 0);
+
+        row.innerHTML = `
+            <span class="place">#${place}</span>
+            <span class="user">${username}</span>
+            <span class="score">${value}</span>
+        `;
+        leaderboardList.appendChild(row);
+    });
+}
+
+function stopLeaderboardLoadingAnimation() {
+    if (leaderboardLoadingAnimationId) {
+        clearInterval(leaderboardLoadingAnimationId);
+        leaderboardLoadingAnimationId = null;
+    }
+}
+
+function startLeaderboardLoadingAnimation() {
+    let dots = 0;
+    stopLeaderboardLoadingAnimation();
+    leaderboardLoadingAnimationId = setInterval(() => {
+        dots = (dots + 1) % 4;
+        leaderboardStatus.textContent = `Загрузка${'.'.repeat(dots)}`;
+    }, 350);
+}
+
+function openLeaderboardModal() {
+    leaderboardModal.classList.remove('hidden');
+}
+
+function closeLeaderboardModal() {
+    leaderboardModal.classList.add('hidden');
+    stopLeaderboardLoadingAnimation();
+}
+
+async function submitScoreIfPossible() {
+    const tgId = getTgId();
+    if (!tgId || isSubmittingScore) return;
+
+    isSubmittingScore = true;
+    try {
+        const payload = {
+            date_time: formatMoscowDateTime(new Date()),
+            username: getTgUsername() || 'Игрок',
+            score: Number(score),
+            tg_id: Number(tgId)
+        };
+        await fetch(LEADERBOARD_API_URL, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'text/plain;charset=utf-8'
+            },
+            body: JSON.stringify(payload)
+        });
+    } catch (error) {
+        console.error('Score submit failed:', error);
+    } finally {
+        isSubmittingScore = false;
+    }
+}
+
+async function loadLeaderboard() {
+    openLeaderboardModal();
+    leaderboardList.classList.add('hidden');
+    leaderboardStatus.classList.remove('hidden');
+    leaderboardStatus.textContent = 'Загрузка';
+    startLeaderboardLoadingAnimation();
+
+    try {
+        const response = await fetch(LEADERBOARD_API_URL, { method: 'GET' });
+        const data = await response.json();
+        const top = Array.isArray(data?.top) ? data.top : [];
+
+        stopLeaderboardLoadingAnimation();
+        if (!data?.ok || top.length === 0) {
+            leaderboardStatus.textContent = 'Пока нет рекордов';
+            return;
+        }
+
+        leaderboardStatus.classList.add('hidden');
+        leaderboardList.classList.remove('hidden');
+        renderLeaderboardRows(top);
+    } catch (error) {
+        stopLeaderboardLoadingAnimation();
+        leaderboardStatus.textContent = 'Не удалось загрузить';
+        console.error('Leaderboard load failed:', error);
+    }
+}
+
 function showStartScreen() {
     hud.classList.add('hidden');
     startScreen.classList.remove('hidden');
@@ -110,6 +252,7 @@ function endGame() {
     clearTimer();
     updateTimerText();
     showGameOverScreen();
+    submitScoreIfPossible();
 }
 
 function startTimer() {
@@ -698,7 +841,11 @@ restartBtn.addEventListener('click', (e) => {
 
 leaderboardBtn.addEventListener('click', (e) => {
     e.preventDefault();
-    // Пока оставляем кнопку без действия.
+    loadLeaderboard();
+});
+
+leaderboardCloseBtn.addEventListener('click', () => {
+    closeLeaderboardModal();
 });
 
 init();
