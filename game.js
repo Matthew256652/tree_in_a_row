@@ -1,5 +1,11 @@
 const canvas = document.getElementById('game');
 const scoreDiv = document.getElementById('score');
+const timerDiv = document.getElementById('timer');
+const startScreen = document.getElementById('start-screen');
+const gameOverScreen = document.getElementById('game-over-screen');
+const finalScoreDiv = document.getElementById('final-score');
+const restartBtn = document.getElementById('restart-btn');
+const leaderboardBtn = document.getElementById('leaderboard-btn');
 
 let score = 0;
 const ctx = canvas.getContext('2d');
@@ -7,6 +13,8 @@ const ctx = canvas.getContext('2d');
 const size = 8;
 const cell = 45;
 const boardGap = 1.5;
+const GAME_DURATION_SECONDS = 180;
+const TIMER_WARNING_SECONDS = 20;
 const tileTypes = ['gem1', 'gem2', 'gem3', 'gem4', 'gem5'];
 const fallbackColors = {
     gem1: '#f44336',
@@ -16,6 +24,9 @@ const fallbackColors = {
     gem5: '#9c27b0'
 };
 const tileImages = {};
+let gameState = 'start'; // start | playing | gameover
+let timeLeft = GAME_DURATION_SECONDS;
+let timerIntervalId = null;
 
 function loadImageWithFallbacks(candidates) {
     const img = new Image();
@@ -54,6 +65,89 @@ let touchId = null;
 let touchStart = null;
 let touchStartCell = null;
 const SWIPE_THRESHOLD = 20;
+
+function formatTime(seconds) {
+    const safeSeconds = Math.max(0, seconds);
+    const minutes = Math.floor(safeSeconds / 60);
+    const secs = safeSeconds % 60;
+    return `${minutes}:${String(secs).padStart(2, '0')}`;
+}
+
+function updateTimerText() {
+    timerDiv.textContent = `Время: ${formatTime(timeLeft)}`;
+    timerDiv.classList.toggle('warning', timeLeft <= TIMER_WARNING_SECONDS);
+}
+
+function clearTimer() {
+    if (timerIntervalId) {
+        clearInterval(timerIntervalId);
+        timerIntervalId = null;
+    }
+}
+
+function showStartScreen() {
+    startScreen.classList.remove('hidden');
+}
+
+function hideStartScreen() {
+    startScreen.classList.add('hidden');
+}
+
+function showGameOverScreen() {
+    finalScoreDiv.textContent = `Твой результат: ${score} баллов`;
+    gameOverScreen.classList.remove('hidden');
+}
+
+function hideGameOverScreen() {
+    gameOverScreen.classList.add('hidden');
+}
+
+function endGame() {
+    gameState = 'gameover';
+    clearTimer();
+    updateTimerText();
+    showGameOverScreen();
+}
+
+function startTimer() {
+    clearTimer();
+    updateTimerText();
+    timerIntervalId = setInterval(() => {
+        if (gameState !== 'playing') return;
+        timeLeft -= 1;
+        updateTimerText();
+        if (timeLeft <= 0) {
+            timeLeft = 0;
+            endGame();
+        }
+    }, 1000);
+}
+
+function resetBoardState() {
+    selected = null;
+    busy = false;
+    swapping = false;
+    removing = false;
+    swapAnimation = null;
+    mouseDown = false;
+    mouseStart = null;
+    mouseStartCell = null;
+    touchId = null;
+    touchStart = null;
+    touchStartCell = null;
+}
+
+function startGame() {
+    score = 0;
+    scoreDiv.textContent = `Счёт: ${score}`;
+    timeLeft = GAME_DURATION_SECONDS;
+    resetBoardState();
+    init();
+    hideStartScreen();
+    hideGameOverScreen();
+    gameState = 'playing';
+    startTimer();
+}
 
 function randColor() {
     return tileTypes[Math.floor(Math.random() * tileTypes.length)];
