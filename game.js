@@ -195,19 +195,13 @@ async function submitScoreIfPossible() {
 
     isSubmittingScore = true;
     try {
-        const payload = {
-            date_time: formatMoscowDateTime(new Date()),
-            username: getTgUsername() || 'Игрок',
-            score: Number(score),
-            tg_id: Number(tgId)
-        };
-        await fetch(LEADERBOARD_API_URL, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(payload)
-        });
+        const url = new URL(LEADERBOARD_API_URL);
+        url.searchParams.set('function', 'AddRecord');
+        url.searchParams.set('date_time', formatMoscowDateTime(new Date()));
+        url.searchParams.set('username', getTgUsername() || 'Игрок');
+        url.searchParams.set('score', String(Number(score)));
+        url.searchParams.set('tg_id', String(Number(tgId)));
+        await fetch(url.toString(), { method: 'GET' });
     } catch (error) {
         console.error('Score submit failed:', error);
     } finally {
@@ -221,7 +215,9 @@ async function loadLeaderboard() {
     startLeaderboardLoadingAnimation();
 
     try {
-        const response = await fetch(LEADERBOARD_API_URL, { method: 'GET' });
+        const url = new URL(LEADERBOARD_API_URL);
+        url.searchParams.set('function', 'GetTop10');
+        const response = await fetch(url.toString(), { method: 'GET' });
         const data = await response.json();
         const top = Array.isArray(data?.top) ? data.top : [];
 
