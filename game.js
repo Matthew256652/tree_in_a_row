@@ -9,8 +9,7 @@ const restartBtn = document.getElementById('restart-btn');
 const leaderboardBtn = document.getElementById('leaderboard-btn');
 const leaderboardModal = document.getElementById('leaderboard-modal');
 const leaderboardCloseBtn = document.getElementById('leaderboard-close-btn');
-const leaderboardStatus = document.getElementById('leaderboard-status');
-const leaderboardList = document.getElementById('leaderboard-list');
+const leaderboardContent = document.getElementById('leaderboard-content');
 
 let score = 0;
 const ctx = canvas.getContext('2d');
@@ -35,6 +34,7 @@ let timeLeft = GAME_DURATION_SECONDS;
 let timerIntervalId = null;
 let isSubmittingScore = false;
 let leaderboardLoadingAnimationId = null;
+let leaderboardIsOpen = false;
 
 function loadImageWithFallbacks(candidates) {
     const img = new Image();
@@ -130,7 +130,7 @@ function formatMoscowDateTime(date = new Date()) {
 }
 
 function renderLeaderboardRows(topList) {
-    leaderboardList.innerHTML = '';
+    leaderboardContent.innerHTML = '';
     topList.forEach((item, index) => {
         const row = document.createElement('div');
         row.className = 'leaderboard-row';
@@ -145,7 +145,7 @@ function renderLeaderboardRows(topList) {
             <span class="user">${username}</span>
             <span class="score">${value}</span>
         `;
-        leaderboardList.appendChild(row);
+        leaderboardContent.appendChild(row);
     });
 }
 
@@ -160,16 +160,20 @@ function startLeaderboardLoadingAnimation() {
     let dots = 0;
     stopLeaderboardLoadingAnimation();
     leaderboardLoadingAnimationId = setInterval(() => {
+        if (!leaderboardIsOpen) return;
         dots = (dots + 1) % 4;
-        leaderboardStatus.textContent = `Загрузка${'.'.repeat(dots)}`;
+        const loadingEl = leaderboardContent.querySelector('.leaderboard-loading');
+        if (loadingEl) loadingEl.textContent = `Загрузка${'.'.repeat(dots)}`;
     }, 350);
 }
 
 function openLeaderboardModal() {
+    leaderboardIsOpen = true;
     leaderboardModal.classList.remove('hidden');
 }
 
 function closeLeaderboardModal() {
+    leaderboardIsOpen = false;
     leaderboardModal.classList.add('hidden');
     stopLeaderboardLoadingAnimation();
 }
@@ -202,9 +206,7 @@ async function submitScoreIfPossible() {
 
 async function loadLeaderboard() {
     openLeaderboardModal();
-    leaderboardList.classList.add('hidden');
-    leaderboardStatus.classList.remove('hidden');
-    leaderboardStatus.textContent = 'Загрузка';
+    leaderboardContent.innerHTML = '<div class="leaderboard-loading">Загрузка</div>';
     startLeaderboardLoadingAnimation();
 
     try {
@@ -212,18 +214,18 @@ async function loadLeaderboard() {
         const data = await response.json();
         const top = Array.isArray(data?.top) ? data.top : [];
 
+        if (!leaderboardIsOpen) return;
         stopLeaderboardLoadingAnimation();
         if (!data?.ok || top.length === 0) {
-            leaderboardStatus.textContent = 'Пока нет рекордов';
+            leaderboardContent.innerHTML = '<div class="leaderboard-empty">Пока нет рекордов</div>';
             return;
         }
 
-        leaderboardStatus.classList.add('hidden');
-        leaderboardList.classList.remove('hidden');
         renderLeaderboardRows(top);
     } catch (error) {
+        if (!leaderboardIsOpen) return;
         stopLeaderboardLoadingAnimation();
-        leaderboardStatus.textContent = 'Не удалось загрузить';
+        leaderboardContent.innerHTML = '<div class="leaderboard-empty">Не удалось загрузить</div>';
         console.error('Leaderboard load failed:', error);
     }
 }
@@ -284,6 +286,7 @@ function resetBoardState() {
 }
 
 function startGame() {
+    closeLeaderboardModal();
     score = 0;
     scoreDiv.textContent = `Счёт: ${score}`;
     timeLeft = GAME_DURATION_SECONDS;
@@ -846,6 +849,10 @@ leaderboardBtn.addEventListener('click', (e) => {
 
 leaderboardCloseBtn.addEventListener('click', () => {
     closeLeaderboardModal();
+});
+
+leaderboardModal.addEventListener('click', (e) => {
+    if (e.target === leaderboardModal) closeLeaderboardModal();
 });
 
 init();
