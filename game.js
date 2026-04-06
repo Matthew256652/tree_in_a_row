@@ -131,10 +131,21 @@ function formatMoscowDateTime(date = new Date()) {
 
 function renderLeaderboardRows(topList) {
     leaderboardContent.innerHTML = '';
+    const total = Math.max(topList.length - 1, 1);
     topList.forEach((item, index) => {
         const row = document.createElement('div');
         row.className = 'leaderboard-row';
-        if (index < 3) row.classList.add(`place-${index + 1}`);
+        if (index < 3) {
+            row.classList.add(`place-${index + 1}`);
+        } else {
+            const progress = (index - 3) / Math.max(total - 3, 1);
+            const startColor = [107, 181, 255];
+            const endColor = [172, 178, 191];
+            const r = Math.round(startColor[0] + (endColor[0] - startColor[0]) * progress);
+            const g = Math.round(startColor[1] + (endColor[1] - startColor[1]) * progress);
+            const b = Math.round(startColor[2] + (endColor[2] - startColor[2]) * progress);
+            row.style.background = `rgb(${r}, ${g}, ${b})`;
+        }
 
         const place = Number(item.place || (index + 1));
         const username = item.username || 'Игрок';
@@ -193,7 +204,7 @@ async function submitScoreIfPossible() {
         await fetch(LEADERBOARD_API_URL, {
             method: 'POST',
             headers: {
-                'Content-Type': 'text/plain;charset=utf-8'
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify(payload)
         });
