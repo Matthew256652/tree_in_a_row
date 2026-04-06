@@ -94,7 +94,10 @@ function clearTimer() {
 }
 
 function getTgUser() {
-    return window.Telegram?.WebApp?.initDataUnsafe?.user || null;
+    const tg = typeof Telegram !== 'undefined'
+        ? Telegram
+        : (typeof window !== 'undefined' ? window.Telegram : null);
+    return tg?.WebApp?.initDataUnsafe?.user || null;
 }
 
 function getTgId() {
