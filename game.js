@@ -10,14 +10,15 @@ const leaderboardBtn = document.getElementById('leaderboard-btn');
 const leaderboardModal = document.getElementById('leaderboard-modal');
 const leaderboardCloseBtn = document.getElementById('leaderboard-close-btn');
 const leaderboardContent = document.getElementById('leaderboard-content');
+const gameWrap = document.querySelector('.game-wrap');
 
 let score = 0;
 const ctx = canvas.getContext('2d');
 
 const size = 8;
-const cell = 45;
-const boardGap = 1.5;
-const GAME_DURATION_SECONDS = 180;
+let cell = 45;
+let boardGap = 1.5;
+const GAME_DURATION_SECONDS = 30;
 const TIMER_WARNING_SECONDS = 20;
 const LEADERBOARD_API_URL = 'https://script.google.com/macros/s/AKfycbzJFmEX9X6zP9Pv7Z_jBgGukEhzbcXWc7eVnqc4l9JCZKPEwDZGGEi1Ki6Icc0uiq4-YA/exec';
 const tileTypes = ['gem1', 'gem2', 'gem3', 'gem4', 'gem5'];
@@ -93,8 +94,19 @@ function clearTimer() {
     }
 }
 
+function resizeBoard() {
+    const wrapWidth = gameWrap?.getBoundingClientRect().width || 360;
+    const boardSize = Math.max(240, Math.round(wrapWidth));
+    canvas.width = boardSize;
+    canvas.height = boardSize;
+    cell = boardSize / size;
+    boardGap = Math.max(1, cell * 0.03);
+}
+
 function getTgUser() {
-    const u = Telegram?.WebApp?.initDataUnsafe?.user; return u || null;
+    const tg = (typeof Telegram !== 'undefined') ? Telegram : undefined;
+    const u = tg?.WebApp?.initDataUnsafe?.user;
+    return u || null;
 }
 
 function getTgId() {
@@ -294,6 +306,7 @@ function resetBoardState() {
 
 function startGame() {
     closeLeaderboardModal();
+    resizeBoard();
     score = 0;
     scoreDiv.textContent = `Счёт: ${score}`;
     timeLeft = GAME_DURATION_SECONDS;
@@ -374,7 +387,7 @@ function drawTile(tileType) {
     const sprite = tileImages[tileType];
 
     if (sprite && sprite.complete && sprite.naturalWidth > 0) {
-        const padding = 2;
+        const padding = Math.max(1.5, cell * 0.045);
         ctx.drawImage(sprite, -cell / 2 + padding, -cell / 2 + padding, cell - padding * 2, cell - padding * 2);
         return;
     }
@@ -388,7 +401,7 @@ function drawTile(tileType) {
 
 function drawBoardGrid() {
     const innerCell = cell - boardGap;
-    const radius = 6;
+    const radius = Math.max(4, cell * 0.13);
 
     for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
@@ -620,8 +633,12 @@ function animateSwap(cell1, cell2, reverse = false, callback = null) {
 
 function getCellFromCoordinates(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
-    const x = Math.floor((clientX - rect.left) / cell);
-    const y = Math.floor((clientY - rect.top) / cell);
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    const localX = (clientX - rect.left) * scaleX;
+    const localY = (clientY - rect.top) * scaleY;
+    const x = Math.floor(localX / cell);
+    const y = Math.floor(localY / cell);
     
     if (x < 0 || x >= size || y < 0 || y >= size) {
         return null;
@@ -862,6 +879,10 @@ leaderboardModal.addEventListener('click', (e) => {
     if (e.target === leaderboardModal) closeLeaderboardModal();
 });
 
+window.addEventListener('resize', resizeBoard);
+window.addEventListener('orientationchange', resizeBoard);
+
+resizeBoard();
 init();
 showStartScreen();
 updateTimerText();
