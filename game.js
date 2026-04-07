@@ -18,7 +18,8 @@ const ctx = canvas.getContext('2d');
 const size = 8;
 let cell = 45;
 let boardGap = 1.5;
-const GAME_DURATION_SECONDS = 180;
+let boardSize = 360;
+const GAME_DURATION_SECONDS = 30;
 const TIMER_WARNING_SECONDS = 20;
 const LEADERBOARD_API_URL = 'https://script.google.com/macros/s/AKfycbzJFmEX9X6zP9Pv7Z_jBgGukEhzbcXWc7eVnqc4l9JCZKPEwDZGGEi1Ki6Icc0uiq4-YA/exec';
 const tileTypes = ['gem1', 'gem2', 'gem3', 'gem4', 'gem5'];
@@ -96,9 +97,17 @@ function clearTimer() {
 
 function resizeBoard() {
     const wrapWidth = gameWrap?.getBoundingClientRect().width || 360;
-    const boardSize = Math.max(240, Math.round(wrapWidth));
-    canvas.width = boardSize;
-    canvas.height = boardSize;
+    boardSize = Math.max(240, Math.round(wrapWidth));
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+
+    canvas.style.width = `${boardSize}px`;
+    canvas.style.height = `${boardSize}px`;
+    canvas.width = Math.round(boardSize * dpr);
+    canvas.height = Math.round(boardSize * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
     cell = boardSize / size;
     boardGap = Math.max(1, cell * 0.03);
 }
@@ -432,9 +441,9 @@ function drawBoardGrid() {
 }
 
 function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.clearRect(0, 0, boardSize, boardSize);
     ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, boardSize, boardSize);
     drawBoardGrid();
 
     for (let y = 0; y < size; y++) {
@@ -633,8 +642,8 @@ function animateSwap(cell1, cell2, reverse = false, callback = null) {
 
 function getCellFromCoordinates(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    const scaleX = boardSize / rect.width;
+    const scaleY = boardSize / rect.height;
     const localX = (clientX - rect.left) * scaleX;
     const localY = (clientY - rect.top) * scaleY;
     const x = Math.floor(localX / cell);
