@@ -1,12 +1,65 @@
 const canvas = document.getElementById('game');
 const scoreDiv = document.getElementById('score');
+const timerDiv = document.getElementById('timer');
+const hud = document.getElementById('hud');
+const startScreen = document.getElementById('start-screen');
+const gameOverScreen = document.getElementById('game-over-screen');
+const finalScoreDiv = document.getElementById('final-score');
+const restartBtn = document.getElementById('restart-btn');
+const leaderboardBtn = document.getElementById('leaderboard-btn');
+const leaderboardModal = document.getElementById('leaderboard-modal');
+const leaderboardCloseBtn = document.getElementById('leaderboard-close-btn');
+const leaderboardContent = document.getElementById('leaderboard-content');
+const gameWrap = document.querySelector('.game-wrap');
 
 let score = 0;
 const ctx = canvas.getContext('2d');
 
 const size = 8;
-const cell = 45;
-const colors = ['red', 'blue', 'yellow', 'green'];
+let cell = 45;
+let boardGap = 1.5;
+let boardSize = 360;
+const GAME_DURATION_SECONDS = 180;
+const TIMER_WARNING_SECONDS = 20;
+const LEADERBOARD_API_URL = 'https://script.google.com/macros/s/AKfycbzJFmEX9X6zP9Pv7Z_jBgGukEhzbcXWc7eVnqc4l9JCZKPEwDZGGEi1Ki6Icc0uiq4-YA/exec';
+const tileTypes = ['gem1', 'gem2', 'gem3', 'gem4', 'gem5'];
+const fallbackColors = {
+    gem1: '#f44336',
+    gem2: '#2196f3',
+    gem3: '#ffeb3b',
+    gem4: '#4caf50',
+    gem5: '#9c27b0'
+};
+const tileImages = {};
+let gameState = 'start'; // start | playing | gameover
+let timeLeft = GAME_DURATION_SECONDS;
+let timerIntervalId = null;
+let isSubmittingScore = false;
+let leaderboardLoadingAnimationId = null;
+let leaderboardIsOpen = false;
+
+function loadImageWithFallbacks(candidates) {
+    const img = new Image();
+    let index = 0;
+
+    function tryNext() {
+        if (index >= candidates.length) return;
+        img.src = candidates[index];
+        index += 1;
+    }
+
+    img.onerror = tryNext;
+    tryNext();
+    return img;
+}
+
+tileTypes.forEach((type) => {
+    // Поддерживаем обе структуры: assets/gems/gemX.png и assets/gemX.png
+    tileImages[type] = loadImageWithFallbacks([
+        `assets/gems/${type}.png`,
+        `assets/${type}.png`
+    ]);
+});
 
 let board = [];
 let animY = [];
@@ -23,8 +76,259 @@ let touchStart = null;
 let touchStartCell = null;
 const SWIPE_THRESHOLD = 20;
 
+function formatTime(seconds) {
+    const safeSeconds = Math.max(0, seconds);
+    const minutes = Math.floor(safeSeconds / 60);
+    const secs = safeSeconds % 60;
+    return `${minutes}:${String(secs).padStart(2, '0')}`;
+}
+
+function updateTimerText() {
+    timerDiv.textContent = `Время: ${formatTime(timeLeft)}`;
+    timerDiv.classList.toggle('warning', timeLeft <= TIMER_WARNING_SECONDS);
+}
+
+function clearTimer() {
+    if (timerIntervalId) {
+        clearInterval(timerIntervalId);
+        timerIntervalId = null;
+    }
+}
+
+function resizeBoard() {
+    const wrapWidth = gameWrap?.getBoundingClientRect().width || 360;
+    boardSize = Math.max(240, Math.round(wrapWidth));
+    const dpr = Math.max(1, window.devicePixelRatio || 1);
+
+    canvas.style.width = `${boardSize}px`;
+    canvas.style.height = `${boardSize}px`;
+    canvas.width = Math.round(boardSize * dpr);
+    canvas.height = Math.round(boardSize * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+
+    cell = boardSize / size;
+    boardGap = Math.max(1, cell * 0.03);
+}
+
+function getTgUser() {
+    const tg = (typeof Telegram !== 'undefined') ? Telegram : undefined;
+    const u = tg?.WebApp?.initDataUnsafe?.user;
+    return u || null;
+}
+
+function getTgId() {
+    const user = getTgUser();
+    return user?.id ? String(user.id) : '';
+}
+
+function getTgUsername() {
+    const user = getTgUser();
+    if (!user) return '';
+    if (user.username) return '@' + user.username;
+    const fn = user.first_name || '';
+    const ln = user.last_name || '';
+    const combo = (fn + ' ' + ln).trim();
+    return combo || 'Игрок';
+}
+
+function formatMoscowDateTime(date = new Date()) {
+    const parts = new Intl.DateTimeFormat('ru-RU', {
+        timeZone: 'Europe/Moscow',
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    }).formatToParts(date);
+    const map = {};
+    parts.forEach((p) => {
+        map[p.type] = p.value;
+    });
+    return `${map.day}.${map.month}.${map.year} ${map.hour}:${map.minute}`;
+}
+
+function renderLeaderboardRows(topList) {
+    leaderboardContent.innerHTML = '';
+    const total = Math.max(topList.length - 1, 1);
+    topList.forEach((item, index) => {
+        const row = document.createElement('div');
+        row.className = 'leaderboard-row';
+        if (index < 3) {
+            row.classList.add(`place-${index + 1}`);
+        } else {
+            const progress = (index - 3) / Math.max(total - 3, 1);
+            const startColor = [107, 181, 255];
+            const endColor = [172, 178, 191];
+            const r = Math.round(startColor[0] + (endColor[0] - startColor[0]) * progress);
+            const g = Math.round(startColor[1] + (endColor[1] - startColor[1]) * progress);
+            const b = Math.round(startColor[2] + (endColor[2] - startColor[2]) * progress);
+            row.style.background = `rgb(${r}, ${g}, ${b})`;
+        }
+
+        const place = Number(item.place || (index + 1));
+        const username = item.username || 'Игрок';
+        const value = Number(item.score || 0);
+
+        row.innerHTML = `
+            <span class="place">#${place}</span>
+            <span class="user">${username}</span>
+            <span class="score">${value}</span>
+        `;
+        leaderboardContent.appendChild(row);
+    });
+}
+
+function stopLeaderboardLoadingAnimation() {
+    if (leaderboardLoadingAnimationId) {
+        clearInterval(leaderboardLoadingAnimationId);
+        leaderboardLoadingAnimationId = null;
+    }
+}
+
+function startLeaderboardLoadingAnimation() {
+    let dots = 0;
+    stopLeaderboardLoadingAnimation();
+    leaderboardLoadingAnimationId = setInterval(() => {
+        if (!leaderboardIsOpen) return;
+        dots = (dots + 1) % 4;
+        const loadingEl = leaderboardContent.querySelector('.leaderboard-loading');
+        if (loadingEl) loadingEl.textContent = `Загрузка${'.'.repeat(dots)}`;
+    }, 350);
+}
+
+function openLeaderboardModal() {
+    leaderboardIsOpen = true;
+    leaderboardModal.classList.remove('hidden');
+}
+
+function closeLeaderboardModal() {
+    leaderboardIsOpen = false;
+    leaderboardModal.classList.add('hidden');
+    stopLeaderboardLoadingAnimation();
+}
+
+async function submitScoreIfPossible() {
+    const tgId = getTgId();
+    if (!tgId || isSubmittingScore) return;
+
+    isSubmittingScore = true;
+    try {
+        const url = new URL(LEADERBOARD_API_URL);
+        url.searchParams.set('function', 'AddRecord');
+        url.searchParams.set('date_time', formatMoscowDateTime(new Date()));
+        url.searchParams.set('username', getTgUsername() || 'Игрок');
+        url.searchParams.set('score', String(Number(score)));
+        url.searchParams.set('tg_id', String(Number(tgId)));
+        await fetch(url.toString(), { method: 'GET' });
+    } catch (error) {
+        console.error('Score submit failed:', error);
+    } finally {
+        isSubmittingScore = false;
+    }
+}
+
+async function loadLeaderboard() {
+    openLeaderboardModal();
+    leaderboardContent.innerHTML = '<div class="leaderboard-loading">Загрузка</div>';
+    startLeaderboardLoadingAnimation();
+
+    try {
+        const url = new URL(LEADERBOARD_API_URL);
+        url.searchParams.set('function', 'GetTop10');
+        const response = await fetch(url.toString(), { method: 'GET' });
+        const data = await response.json();
+        const top = Array.isArray(data?.top) ? data.top : [];
+
+        if (!leaderboardIsOpen) return;
+        stopLeaderboardLoadingAnimation();
+        if (!data?.ok || top.length === 0) {
+            leaderboardContent.innerHTML = '<div class="leaderboard-empty">Пока нет рекордов</div>';
+            return;
+        }
+
+        renderLeaderboardRows(top);
+    } catch (error) {
+        if (!leaderboardIsOpen) return;
+        stopLeaderboardLoadingAnimation();
+        leaderboardContent.innerHTML = '<div class="leaderboard-empty">Не удалось загрузить</div>';
+        console.error('Leaderboard load failed:', error);
+    }
+}
+
+function showStartScreen() {
+    hud.classList.add('hidden');
+    startScreen.classList.remove('hidden');
+}
+
+function hideStartScreen() {
+    startScreen.classList.add('hidden');
+    hud.classList.remove('hidden');
+}
+
+function showGameOverScreen() {
+    finalScoreDiv.textContent = `Твой результат: ${score} баллов`;
+    gameOverScreen.classList.remove('hidden');
+}
+
+function hideGameOverScreen() {
+    gameOverScreen.classList.add('hidden');
+}
+
+function endGame() {
+    gameState = 'gameover';
+    clearTimer();
+    updateTimerText();
+    showGameOverScreen();
+    submitScoreIfPossible();
+}
+
+function startTimer() {
+    clearTimer();
+    updateTimerText();
+    timerIntervalId = setInterval(() => {
+        if (gameState !== 'playing') return;
+        timeLeft -= 1;
+        updateTimerText();
+        if (timeLeft <= 0) {
+            timeLeft = 0;
+            endGame();
+        }
+    }, 1000);
+}
+
+function resetBoardState() {
+    selected = null;
+    busy = false;
+    swapping = false;
+    removing = false;
+    swapAnimation = null;
+    mouseDown = false;
+    mouseStart = null;
+    mouseStartCell = null;
+    touchId = null;
+    touchStart = null;
+    touchStartCell = null;
+}
+
+function startGame() {
+    closeLeaderboardModal();
+    resizeBoard();
+    score = 0;
+    scoreDiv.textContent = `Счёт: ${score}`;
+    timeLeft = GAME_DURATION_SECONDS;
+    resetBoardState();
+    init();
+    hideStartScreen();
+    hideGameOverScreen();
+    gameState = 'playing';
+    startTimer();
+}
+
 function randColor() {
-    return colors[Math.floor(Math.random() * colors.length)];
+    return tileTypes[Math.floor(Math.random() * tileTypes.length)];
 }
 
 function hasMatchAt(x, y) {
@@ -88,8 +392,59 @@ function drop() {
     }
 }
 
+function drawTile(tileType) {
+    const sprite = tileImages[tileType];
+
+    if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+        const padding = Math.max(1.5, cell * 0.045);
+        ctx.drawImage(sprite, -cell / 2 + padding, -cell / 2 + padding, cell - padding * 2, cell - padding * 2);
+        return;
+    }
+
+    // Fallback на случай, если картинка не успела загрузиться.
+    ctx.beginPath();
+    ctx.arc(0, 0, cell / 2 - 5, 0, Math.PI * 2);
+    ctx.fillStyle = fallbackColors[tileType] || '#888';
+    ctx.fill();
+}
+
+function drawBoardGrid() {
+    const innerCell = cell - boardGap;
+    const radius = Math.max(4, cell * 0.13);
+
+    for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+            const left = x * cell + boardGap / 2;
+            const top = y * cell + boardGap / 2;
+            const width = innerCell;
+            const height = innerCell;
+
+            ctx.beginPath();
+            ctx.moveTo(left + radius, top);
+            ctx.lineTo(left + width - radius, top);
+            ctx.quadraticCurveTo(left + width, top, left + width, top + radius);
+            ctx.lineTo(left + width, top + height - radius);
+            ctx.quadraticCurveTo(left + width, top + height, left + width - radius, top + height);
+            ctx.lineTo(left + radius, top + height);
+            ctx.quadraticCurveTo(left, top + height, left, top + height - radius);
+            ctx.lineTo(left, top + radius);
+            ctx.quadraticCurveTo(left, top, left + radius, top);
+            ctx.closePath();
+
+            ctx.fillStyle = '#d6d3ed';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+    }
+}
+
 function draw() {
-    ctx.clearRect(0, 0, 360, 360);
+    ctx.clearRect(0, 0, boardSize, boardSize);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.fillRect(0, 0, boardSize, boardSize);
+    drawBoardGrid();
 
     for (let y = 0; y < size; y++) {
         for (let x = 0; x < size; x++) {
@@ -143,10 +498,7 @@ function draw() {
             ctx.translate(px, py);
             ctx.scale(scale[y][x], scale[y][x]);
 
-            ctx.beginPath();
-            ctx.arc(0, 0, cell / 2 - 5, 0, Math.PI * 2);
-            ctx.fillStyle = c;
-            ctx.fill();
+            drawTile(c);
 
             // Подсветка выбранного элемента
             if (selected && selected.x === x && selected.y === y) {
@@ -202,7 +554,7 @@ function removeMatches(matches) {
                 scale[p.y][p.x] = 1;
                 score += 10;
             });
-            scoreDiv.textContent = 'Score: ' + score;
+            scoreDiv.textContent = 'Счёт: ' + score;
 
             removing = false;
             drop();
@@ -290,8 +642,12 @@ function animateSwap(cell1, cell2, reverse = false, callback = null) {
 
 function getCellFromCoordinates(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
-    const x = Math.floor((clientX - rect.left) / cell);
-    const y = Math.floor((clientY - rect.top) / cell);
+    const scaleX = boardSize / rect.width;
+    const scaleY = boardSize / rect.height;
+    const localX = (clientX - rect.left) * scaleX;
+    const localY = (clientY - rect.top) * scaleY;
+    const x = Math.floor(localX / cell);
+    const y = Math.floor(localY / cell);
     
     if (x < 0 || x >= size || y < 0 || y >= size) {
         return null;
@@ -337,6 +693,7 @@ let mouseStart = null;
 let mouseStartCell = null;
 
 canvas.addEventListener('mousedown', (e) => {
+    if (gameState !== 'playing') return;
     if (busy || swapping) return;
     
     const rect = canvas.getBoundingClientRect();
@@ -354,6 +711,7 @@ canvas.addEventListener('mousemove', (e) => {
 });
 
 canvas.addEventListener('mouseup', (e) => {
+    if (gameState !== 'playing') return;
     if (!mouseDown || busy || swapping || !mouseStart || !mouseStartCell) return;
     
     const rect = canvas.getBoundingClientRect();
@@ -406,6 +764,7 @@ canvas.addEventListener('mouseleave', () => {
 
 // ========== ОБРАБОТЧИКИ ТАЧА ==========
 canvas.addEventListener('touchstart', (e) => {
+    if (gameState !== 'playing') return;
     e.preventDefault();
     if (busy || swapping || touchId !== null) return;
     
@@ -433,6 +792,7 @@ canvas.addEventListener('touchmove', (e) => {
 });
 
 canvas.addEventListener('touchend', (e) => {
+    if (gameState !== 'playing') return;
     e.preventDefault();
     if (touchId === null || busy || swapping || !touchStart || !touchStartCell) return;
     
@@ -495,5 +855,44 @@ function loop() {
     requestAnimationFrame(loop);
 }
 
+function handleStartOverlayAction() {
+    if (gameState !== 'start') return;
+    startGame();
+}
+
+// Telegram WebApp может по-разному отдавать события тапа.
+startScreen.addEventListener('click', handleStartOverlayAction);
+startScreen.addEventListener('touchend', handleStartOverlayAction);
+startScreen.addEventListener('pointerdown', handleStartOverlayAction);
+
+// Fallback: если оверлей не получил событие, стартуем по первому тапу.
+window.addEventListener('click', handleStartOverlayAction, true);
+window.addEventListener('touchend', handleStartOverlayAction, true);
+window.addEventListener('pointerdown', handleStartOverlayAction, true);
+
+restartBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    startGame();
+});
+
+leaderboardBtn.addEventListener('click', (e) => {
+    e.preventDefault();
+    loadLeaderboard();
+});
+
+leaderboardCloseBtn.addEventListener('click', () => {
+    closeLeaderboardModal();
+});
+
+leaderboardModal.addEventListener('click', (e) => {
+    if (e.target === leaderboardModal) closeLeaderboardModal();
+});
+
+window.addEventListener('resize', resizeBoard);
+window.addEventListener('orientationchange', resizeBoard);
+
+resizeBoard();
 init();
+showStartScreen();
+updateTimerText();
 loop();

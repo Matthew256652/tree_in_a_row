@@ -3,38 +3,294 @@
 
 <head>
     <meta charset="UTF-8" />
-    <title>3 в ряд — с анимацией</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>3 в ряд</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body {
-            background: #111;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
+            background: #111 url('assets/background.jpg') center top / cover no-repeat;
+            min-height: 100vh;
             margin: 0;
             touch-action: none;
             user-select: none;
+            display: flex;
+            justify-content: flex-start;
+            align-items: center;
+            flex-direction: column;
+            padding-top: clamp(170px, 28vh, 230px);
+            box-sizing: border-box;
+        }
+
+        #hud {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            margin-bottom: 12px;
+            z-index: 10;
+        }
+
+        #hud.hidden {
+            display: none;
+        }
+
+        #score,
+        #timer {
+            color: #fff;
+            font: 700 30px/1 Arial, sans-serif;
+            text-shadow: 0 2px 0 rgba(0, 0, 0, 0.25);
+        }
+
+        #timer {
+            font-size: 28px;
+        }
+
+        #timer.warning {
+            color: #ff3333;
+        }
+
+        .game-wrap {
+            position: relative;
+            width: min(92vw, 360px);
         }
 
         canvas {
-            background: #222;
-            border-radius: 12px;
+            background: transparent;
+            border-radius: 14px;
             touch-action: none;
+            margin-top: 10px;
+            width: 100%;
+            height: auto;
+            display: block;
         }
-        
-        #score {
+
+        .overlay {
             position: absolute;
-            top: 20px;
-            color: white;
-            font: bold 20px Arial;
-            z-index: 10;
+            inset: 10px 0 0 0;
+            border-radius: 14px;
+            background: rgba(0, 0, 0, 0.38);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            gap: 14px;
+            padding: 12px;
+            box-sizing: border-box;
+            color: #fff;
+        }
+
+        .hidden {
+            display: none;
+        }
+
+        .start-title,
+        .rules-box {
+            width: min(290px, 88%);
+            background: rgba(72, 76, 90, 0.78);
+            border-radius: 16px;
+            padding: 14px 16px;
+            box-sizing: border-box;
+        }
+
+        .start-title {
+            font: 700 16px/1.2 Arial, sans-serif;
+            text-align: center;
+        }
+
+        .rules-box h3 {
+            margin: 0 0 8px 0;
+            font: 700 14px/1 Arial, sans-serif;
+        }
+
+        .rules-list {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+            font: 700 12px/1.25 Arial, sans-serif;
+        }
+
+        .rules-list li {
+            margin: 0 0 4px 0;
+        }
+
+        .game-over-title {
+            font: 700 40px/1 Arial, sans-serif;
+        }
+
+        .game-over-score {
+            font: 700 28px/1.2 Arial, sans-serif;
+            text-align: center;
+            margin-bottom: 8px;
+        }
+
+        .overlay-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: min(250px, 80%);
+        }
+
+        .overlay-btn {
+            border: 0;
+            border-radius: 14px;
+            padding: 14px 18px;
+            font: 700 34px/1 Arial, sans-serif;
+            cursor: pointer;
+        }
+
+        #restart-btn {
+            background: #c8c5ff;
+            color: #fff;
+            text-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+        }
+
+        #leaderboard-btn {
+            background: #fff89f;
+            color: #000;
+            font-size: 28px;
+        }
+
+        #leaderboard-modal {
+            z-index: 40;
+        }
+
+        .leaderboard-panel {
+            width: min(340px, 92%);
+            max-height: min(460px, 80%);
+            background: rgba(72, 76, 90, 0.9);
+            border-radius: 16px;
+            box-sizing: border-box;
+            padding: 14px 12px 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .leaderboard-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+        }
+
+        .leaderboard-title {
+            font: 700 28px/1 Arial, sans-serif;
+        }
+
+        .leaderboard-close {
+            border: 0;
+            width: 34px;
+            height: 34px;
+            border-radius: 10px;
+            font: 700 24px/1 Arial, sans-serif;
+            background: rgba(255, 255, 255, 0.15);
+            color: #fff;
+            cursor: pointer;
+        }
+
+        #leaderboard-content {
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding-right: 2px;
+        }
+
+        .leaderboard-loading {
+            text-align: center;
+            font: 700 22px/1.3 Arial, sans-serif;
+            padding: 18px 0;
+        }
+
+        .leaderboard-row {
+            border-radius: 10px;
+            padding: 10px 12px;
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 10px;
+            align-items: center;
+            color: #10121c;
+            font: 700 18px/1.1 Arial, sans-serif;
+        }
+
+        .leaderboard-row.place-1 {
+            background: linear-gradient(90deg, #ffe69a 0%, #fff4c9 100%);
+        }
+
+        .leaderboard-row.place-2 {
+            background: linear-gradient(90deg, #d9dde6 0%, #eceff4 100%);
+        }
+
+        .leaderboard-row.place-3 {
+            background: linear-gradient(90deg, #e2b79d 0%, #f0d3c2 100%);
+        }
+
+        .leaderboard-place {
+            min-width: 34px;
+        }
+
+        .leaderboard-name {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .leaderboard-score {
+            text-align: right;
+        }
+
+        .leaderboard-empty {
+            text-align: center;
+            font: 700 20px/1.3 Arial, sans-serif;
+            color: #fff;
+            padding: 14px 0;
         }
     </style>
 </head>
 
 <body>
-    <div id="score">Score: 0</div>
-    <canvas id="game" width="360" height="360"></canvas>
+    <div id="hud" class="hidden">
+        <div id="score">Счёт: 0</div>
+        <div id="timer">Время: 0:00</div>
+    </div>
+
+    <div class="game-wrap">
+        <canvas id="game" width="360" height="360"></canvas>
+
+        <div id="start-screen" class="overlay">
+            <div class="start-title">Тапни, чтоб начать игру</div>
+            <div class="rules-box">
+                <h3>Правила игры:</h3>
+                <ul class="rules-list">
+                    <li>💗 Выбирай два соседних элемента и меняй их местами (по горизонтали или вертикали)</li>
+                    <li>💗 Собирай линии из трёх или более одинаковых элементов</li>
+                    <li>💗 За каждый исчезнувший ряд начисляются очки. Твоя задача — набрать максимум очков за 3 минуты</li>
+                </ul>
+            </div>
+        </div>
+
+        <div id="game-over-screen" class="overlay hidden">
+            <div class="game-over-title">GAME OVER</div>
+            <div id="final-score" class="game-over-score">Твой результат: 0 баллов</div>
+            <div class="overlay-buttons">
+                <button id="restart-btn" class="overlay-btn" type="button">ЗАНОВО</button>
+                <button id="leaderboard-btn" class="overlay-btn" type="button">ТАБЛИЦА ЛИДЕРОВ</button>
+            </div>
+        </div>
+
+        <div id="leaderboard-modal" class="overlay hidden">
+            <div class="leaderboard-panel">
+                <div class="leaderboard-header">
+                    <div class="leaderboard-title">Таблица лидеров</div>
+                    <button id="leaderboard-close-btn" class="leaderboard-close" type="button">×</button>
+                </div>
+                <div id="leaderboard-content">
+                    <div id="leaderboard-status" class="leaderboard-loading">Загрузка...</div>
+                    <div id="leaderboard-list" class="hidden"></div>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <script src="game.js"></script>
 </body>
